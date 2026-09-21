@@ -1,0 +1,1755 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GitHub Actions expression evaluator</title>
+<meta name="description" content="Evaluate a GitHub Actions expression against a context JSON and see every type cast the runner applied, including the casts where the runner disagrees with JavaScript.">
+<link rel="canonical" href="https://0xelitesystem.github.io/github-actions-expression-evaluator/">
+<meta property="og:title" content="GitHub Actions expression evaluator">
+<meta property="og:description" content="Evaluate a GitHub Actions expression against a context JSON and see every type cast the runner applied, including the casts where the runner disagrees with JavaScript.">
+<meta property="og:url" content="https://0xelitesystem.github.io/github-actions-expression-evaluator/">
+<meta property="og:type" content="website">
+<script type="application/ld+json">
+{"@context":"https://schema.org","@type":"SoftwareApplication","name":"GitHub Actions expression evaluator","applicationCategory":"DeveloperApplication","operatingSystem":"Any (browser)","offers":{"@type":"Offer","price":"0","priceCurrency":"USD"},"url":"https://0xelitesystem.github.io/github-actions-expression-evaluator/","author":{"@type":"Person","name":"0xelitesystem","url":"https://elitesystem.ai"}}
+</script>
+<style>
+/* Palette verified by math, every text token against every background token, both
+   themes, 56 pairs, all at or above 4.5:1. Worst dark 7.47:1, worst light 5.46:1. */
+:root{
+  --bg:#e8ebef; --surface:#f7f8fa; --raised:#ffffff; --flag:#f3f0dc;
+  --ink:#101418; --ink-soft:#3d4650; --accent:#2d6b00;
+  --ok:#1a5c2e; --err:#a82d14; --warn:#8a4d00; --info:#14507a;
+  --line:#b9c0c8; --line-strong:#78808a;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0a0a0a; --surface:#151515; --raised:#1c1c1c; --flag:#1e1c10;
+    --ink:#f2f2f2; --ink-soft:#c9c9c9; --accent:#d4ff3a;
+    --ok:#7ee787; --err:#ff8a80; --warn:#ffd166; --info:#8fd3ff;
+    --line:#3a3a3a; --line-strong:#686868;
+  }
+}
+*{box-sizing:border-box}
+html{color-scheme:light dark}
+body{
+  margin:0; background:var(--bg); color:var(--ink);
+  font:16px/1.6 ui-sans-serif, system-ui, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+}
+main{max-width:1080px; margin:0 auto; padding:24px 18px 64px}
+h1{font-size:1.7rem; line-height:1.25; margin:0 0 8px}
+h2{font-size:1.15rem; margin:32px 0 10px; color:var(--ink)}
+h3{font-size:1rem; margin:20px 0 8px}
+p{margin:0 0 12px}
+a{color:var(--accent)}
+a:focus-visible, button:focus-visible, textarea:focus-visible, [tabindex]:focus-visible{
+  outline:3px solid var(--accent); outline-offset:2px;
+}
+code, kbd, pre, .mono, textarea, td.mono, th.mono{
+  font-family:ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+}
+.lede{color:var(--ink-soft); font-size:1.02rem}
+.small{font-size:.88rem; color:var(--ink-soft)}
+.grid{display:grid; gap:16px; grid-template-columns:1fr}
+@media (min-width:820px){ .grid{grid-template-columns:1fr 1fr} }
+label{display:block; font-weight:600; margin:0 0 6px}
+textarea{
+  width:100%; min-height:96px; padding:10px; border-radius:6px;
+  border:1px solid var(--line-strong); background:var(--raised); color:var(--ink);
+  font-size:.95rem; line-height:1.5; resize:vertical;
+}
+button{
+  font:inherit; font-weight:600; cursor:pointer; padding:9px 14px; border-radius:6px;
+  border:1px solid var(--line-strong); background:var(--raised); color:var(--ink);
+}
+button:hover{border-color:var(--accent)}
+.btnrow{display:flex; flex-wrap:wrap; gap:10px; margin:12px 0 0}
+.scroll{overflow-x:auto; border:1px solid var(--line); border-radius:6px; background:var(--raised)}
+table{border-collapse:collapse; width:100%; font-size:.9rem}
+caption{text-align:left; padding:8px 10px; color:var(--ink-soft); font-size:.85rem}
+th, td{
+  border-bottom:1px solid var(--line); padding:7px 10px;
+  text-align:left; vertical-align:top; white-space:nowrap;
+}
+thead th{background:var(--raised); color:var(--ink); font-weight:700}
+tbody tr:last-child th, tbody tr:last-child td{border-bottom:0}
+tr.flag td, tr.flag th{background:var(--flag)}
+.tok{font-weight:700}
+.tok-true{color:var(--ok)}
+.tok-false{color:var(--err)}
+.tok-warn{color:var(--warn)}
+.tok-info{color:var(--info)}
+.verdict{
+  background:var(--raised); border:1px solid var(--line-strong);
+  border-radius:8px; padding:14px 16px;
+}
+.verdict dl{display:grid; grid-template-columns:auto 1fr; gap:6px 14px; margin:0}
+.verdict dt{color:var(--ink-soft); font-weight:600}
+.verdict dd{margin:0; overflow-wrap:anywhere}
+.msg{border-left:4px solid var(--line-strong); padding:8px 12px; margin:10px 0; background:var(--raised)}
+.msg-err{border-left-color:var(--err); color:var(--ink)}
+.msg-warn{border-left-color:var(--warn); color:var(--ink)}
+.msg-ok{border-left-color:var(--ok); color:var(--ink)}
+.msg-info{border-left-color:var(--info); color:var(--ink)}
+ul{margin:0 0 12px; padding-left:20px}
+li{margin:0 0 6px}
+footer{margin-top:40px; border-top:1px solid var(--line); padding-top:16px}
+.wrap{white-space:normal}
+</style>
+</head>
+<body>
+<main>
+
+<h1>GitHub Actions expression evaluator</h1>
+<p class="lede">Evaluate a GitHub Actions <code>${{ }}</code> expression against a context JSON and see every
+type cast the runner applied, including the four casts where the runner disagrees with JavaScript.</p>
+<p class="small">Everything runs in this page. Nothing you type is uploaded, logged or sent anywhere.
+This is an independent tool. It is not affiliated with, endorsed by, or produced by GitHub.</p>
+
+<h2>Where the evaluator disagrees with JavaScript</h2>
+<p>The non-transitive results people quote are a lead-in, not the point. <code>'' == 0</code>,
+<code>0 == '0'</code>, <code>'' == '0'</code> and <code>'true' == true</code> return exactly the same
+answers in raw JavaScript, so knowing JavaScript is enough to predict them. The rows below are the ones
+JavaScript knowledge gets wrong. String versus string is <strong>OrdinalIgnoreCase</strong>, so a branch
+guard on a ref name or a label matches on any casing, and <code>null</code> coerces to <code>0</code>
+before the comparison is retried, so <code>null</code> equals both <code>0</code> and the empty string.</p>
+
+<div class="scroll" tabindex="0" role="group" aria-label="Divergences between this evaluator and JavaScript">
+<table>
+  <caption>Both columns are computed in your browser when this page loads. Nothing is hard coded.</caption>
+  <thead><tr>
+    <th scope="col">expression</th>
+    <th scope="col">this evaluator (Actions semantics)</th>
+    <th scope="col">the same operator in JavaScript</th>
+    <th scope="col" class="wrap">why they differ</th>
+  </tr></thead>
+  <tbody id="divTable"></tbody>
+</table>
+</div>
+
+<div class="scroll" tabindex="0" role="group" aria-label="Results that agree with JavaScript">
+<table>
+  <caption>The lead-in rows. Identical on both sides, which is why they are not the headline.</caption>
+  <thead><tr>
+    <th scope="col">expression</th>
+    <th scope="col">this evaluator</th>
+    <th scope="col">JavaScript</th>
+  </tr></thead>
+  <tbody id="sameTable"></tbody>
+</table>
+</div>
+
+<h2>Evaluate an expression</h2>
+<div class="grid">
+  <div>
+    <label for="exprInput">Expression (the <code>${{ }}</code> wrapper is optional)</label>
+    <textarea id="exprInput" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+  </div>
+  <div>
+    <label for="ctxInput">Context JSON (an empty box is treated as <code>{}</code>)</label>
+    <textarea id="ctxInput" spellcheck="false" autocapitalize="off" autocorrect="off"></textarea>
+  </div>
+</div>
+<div class="btnrow">
+  <button type="button" id="evalBtn">Evaluate</button>
+  <button type="button" id="exampleBtn">Load the worked example</button>
+  <button type="button" id="selftestBtn">Run self test</button>
+</div>
+
+<h2>Verdict</h2>
+<div class="verdict" id="verdict" role="status" aria-live="polite" aria-atomic="true"></div>
+
+<h2>Trace</h2>
+<p class="small">One row per node. For a comparison the row names the kind of each operand, the CoerceTypes
+branch that fired, and the branch that produced the verdict.</p>
+<div class="scroll" tabindex="0" role="group" aria-label="Evaluation trace">
+<table>
+  <thead><tr>
+    <th scope="col">#</th>
+    <th scope="col">node</th>
+    <th scope="col">left</th>
+    <th scope="col">right</th>
+    <th scope="col" class="wrap">cast applied</th>
+    <th scope="col" class="wrap">branch that produced the verdict</th>
+    <th scope="col">result</th>
+  </tr></thead>
+  <tbody id="traceTable"></tbody>
+</table>
+</div>
+
+<h2>Self test</h2>
+<p class="small">The strip below runs on load. The full suite runs on the button. It contains one
+<strong>positive control</strong>, an assertion written to fail on purpose, so a suite that silently stops
+running is visible rather than green.</p>
+<div id="strip"></div>
+<div id="selftestOut"></div>
+
+<h2>What this evaluator does not do</h2>
+<ul>
+  <li><code>hashFiles</code> is refused by name. It hashes files in the runner workspace, and this page has
+      no workspace and reads no files.</li>
+  <li><code>success</code>, <code>failure</code>, <code>always</code> and <code>cancelled</code> are refused
+      by name. They read job status from the runner, which does not exist here.</li>
+  <li><code>toJSON</code> is refused by name. The runner writes JSON through its own writer and that writer
+      was not reproduced and verified here, so the function returns a refusal rather than a guess.</li>
+  <li>The page evaluates one expression, not a whole template string with several
+      <code>${{ }}</code> segments interleaved with literal text.</li>
+</ul>
+
+<h2>Provenance</h2>
+<p>The coercion, comparison, truthiness and number parsing behaviour was reimplemented in JavaScript from
+GitHub's published runner sources, fetched and read on 2026-09-09. No code is reproduced here. The files
+read, with the byte sizes they had that day:</p>
+<ul>
+  <li><code>src/Sdk/DTExpressions2/Expressions2/EvaluationResult.cs</code>, 17010 bytes.
+      <code>IsFalsy</code> at lines 50 to 71, <code>IsTruthy</code> at line 75, the String equality branch at
+      line 256, the reference equality branch at line 267, <code>CoerceTypes</code> at lines 360 to 397.</li>
+  <li><code>src/Sdk/DTExpressions2/Expressions2/Sdk/ExpressionUtility.cs</code>, 8581 bytes.
+      <code>ParseNumber</code> at lines 193 to 257.</li>
+  <li><code>src/Sdk/DTExpressions2/Expressions2/ExpressionConstants.cs</code>, 2749 bytes.
+      <code>MaxDepth = 50</code> at line 30, <code>MaxLength = 21000</code> at line 31,
+      <code>NumberFormat = "G15"</code> at line 35.</li>
+  <li><code>src/Sdk/DTExpressions2/Expressions2/Tokens/LexicalAnalyzer.cs</code>, 20898 bytes. Number literals in the
+      expression text go through the same <code>ParseNumber</code>, at line 131.</li>
+</ul>
+<p>The rules were cross-checked against GitHub's own published port, the npm package
+<code>@actions/expressions</code> version 0.3.61 (MIT, repository <code>actions/languageservices</code>),
+read on the same day.</p>
+<p>The comment sitting above the equality functions in <code>EvaluationResult.cs</code>, lines 78 and 79,
+reads:</p>
+<blockquote class="msg msg-info"><p class="mono small">Similar to the Javascript abstract equality
+comparison algorithm http://www.ecma-international.org/ecma-262/5.1/#sec-11.9.3.<br>
+Except string comparison is OrdinalIgnoreCase, and objects are not coerced to primitives.</p></blockquote>
+<p>The published documentation cast table is <strong>incomplete</strong> as a description of
+<code>==</code>. It lists Array and Object casting to <code>NaN</code>, but <code>CoerceTypes</code> has no
+Array or Object branch on either side, so a container compared with <code>==</code> never reaches a
+<code>NaN</code> cast. It falls through to the kind check and returns <code>false</code>, and two containers
+of the same kind are compared by reference. The <code>NaN</code> rows are unreachable from every
+comparison operator, equality and relational alike.</p>
+<p>The cast table's String row begins "Parsed from any legal JSON number format, otherwise NaN". The
+runner's parser is wider than that. It accepts hexadecimal, octal, a leading plus, surrounding whitespace
+and the literal <code>Infinity</code> in any casing, and not one of those is a legal JSON number. The
+casing was measured on a hosted runner on 2026-09-21, job <code>35656787367</code>. It also rejects binary
+literals and the uppercase <code>0X</code> and <code>0O</code> prefixes that JavaScript's
+<code>Number()</code> accepts, which is the table below.</p>
+
+<h3>Known divergence from GitHub's own JavaScript port</h3>
+<p>GitHub also publishes a JavaScript port of this language, the npm package
+<code>@actions/expressions</code>, built in the repository <code>actions/languageservices</code> and MIT
+licensed. In version 0.3.61 of that package, the string
+to number cast is a plain JavaScript <code>Number()</code> call, in <code>dist/data/string.js</code> at line
+12, so it disagrees with the C# runner on <code>'0b101'</code>, <code>'0X10'</code>, <code>'0O17'</code>,
+<code>'0xFFFFFFFF'</code> and <code>'0x100000000'</code>. This page follows the C# runner, because that is
+the implementation that executes on hosted runners. All five are self test rows.</p>
+
+<h3>What was measured on a hosted runner, and what was not</h3>
+<p>Sixteen expressions were run in a workflow on a GitHub hosted <code>ubuntu-latest</code> runner on
+2026-09-21 and their output read back verbatim, in jobs <code>35656695534</code> and
+<code>35656787367</code>. This evaluator returns the same verdict on all sixteen. They are:</p>
+<div class="scroll" tabindex="0" role="group" aria-label="Expressions measured on a GitHub hosted runner">
+<table>
+  <caption>Measured on a GitHub hosted ubuntu-latest runner, 2026-09-21. The runner column is the raw job output, copied verbatim.</caption>
+  <thead><tr>
+    <th scope="col">expression</th>
+    <th scope="col">runner</th>
+    <th scope="col">this evaluator</th>
+    <th scope="col">job</th>
+  </tr></thead>
+  <tbody>
+    <tr><td class="mono">'' == 0</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">0 == '0'</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'' == '0'</td><td>false</td><td>false</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'true' == true</td><td>false</td><td>false</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'ABC' == 'abc'</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">null == 0</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">fromJSON('[]') == 0</td><td>false</td><td>false</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'infinity' == 0</td><td>false</td><td>false</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'0x10' == 16</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'0o17' == 15</td><td>true</td><td>true</td><td class="mono">35656695534</td></tr>
+    <tr><td class="mono">'infinity' &gt; 0</td><td>true</td><td>true</td><td class="mono">35656787367</td></tr>
+    <tr><td class="mono">'Infinity' &gt; 0</td><td>true</td><td>true</td><td class="mono">35656787367</td></tr>
+    <tr><td class="mono">'INFINITY' &gt; 0</td><td>true</td><td>true</td><td class="mono">35656787367</td></tr>
+    <tr><td class="mono">'NaN' &gt; 0</td><td>false</td><td>false</td><td class="mono">35656787367</td></tr>
+    <tr><td class="mono">'+5' == 5</td><td>true</td><td>true</td><td class="mono">35656787367</td></tr>
+    <tr><td class="mono">' 5 ' == 5</td><td>true</td><td>true</td><td class="mono">35656787367</td></tr>
+  </tbody>
+</table>
+</div>
+<p>The second job exists because equality cannot tell <code>Infinity</code> apart from <code>NaN</code>:
+<code>'infinity' == 0</code> and <code>'NaN' == 0</code> are both false, whichever one the string parsed to.
+A relational comparison separates them, and it settled the open question. Lowercase
+<code>'infinity'</code> does parse to a number on the runner, and the literal is matched case
+insensitively, so this page now parses <code>'infinity'</code>, <code>'Infinity'</code> and
+<code>'INFINITY'</code> alike. <code>'NaN'</code> is not a parse branch.</p>
+<p class="msg msg-warn">Every other result on this page comes from this evaluator, from raw JavaScript
+running in your browser, or from the runner source files listed above, and was not read off a hosted
+runner. That includes the whole <code>G15</code> number format table, the hexadecimal and octal Int32 edge
+cases beyond the two rows above, the <code>OrdinalIgnoreCase</code> folding rows, the truthiness rows and
+every context lookup row. A hosted runner measurement is also narrower than it sounds: it is one runner
+image on one date, it reports what that runner version did, and it is not a promise about a future runner.
+Where a row matters to you, run it in a workflow and check.</p>
+
+<footer>
+<p class="small">Built by <a href="https://elitesystem.ai">0xelitesystem</a>. MIT licensed. One file, no
+build step, no network calls, no analytics.</p>
+</footer>
+
+</main>
+<script>
+(function(){
+"use strict";
+
+/* ============================ CORE-START ============================ */
+/* Pure evaluator. No DOM, no network. Reimplemented from the runner sources
+   named in the Provenance section of this page. */
+
+var MAX_EXPR_LEN = 21000;   /* ExpressionConstants.cs line 31 */
+var MAX_DEPTH = 50;         /* ExpressionConstants.cs line 30 */
+var MAX_CONTEXT_CHARS = 1000000;  /* a bound this page imposes, so a hostile paste cannot hang the tab */
+var MAX_NODES = 2000;       /* a bound this page imposes on trace size */
+
+function EvalError2(message){ this.name = "EvalError"; this.message = message; }
+EvalError2.prototype = Object.create(Error.prototype);
+function fail(message){ throw new EvalError2(message); }
+
+/* ---- value model. Six kinds, matching ValueKind. ---- */
+function mk(kind, v){ return { kind: kind, v: v, filtered: false }; }
+function nul(){ return mk("Null", null); }
+
+function fromJs(x){
+  if (x === null || x === undefined) { return nul(); }
+  var t = typeof x;
+  if (t === "boolean") { return mk("Boolean", x); }
+  if (t === "number") { return mk("Number", x); }
+  if (t === "string") { return mk("String", x); }
+  if (Array.isArray(x)) { return mk("Array", x); }
+  return mk("Object", x);
+}
+
+/* ---- ParseNumber, reimplemented from ExpressionUtility.cs lines 193 to 257.
+   Returns the value and the name of the branch that produced it, because the
+   branch name is what makes the trace worth reading. ---- */
+var DECIMAL_RE = /^[+-]?(\d+(\.\d*)?|\.\d+)([eE][+-]?\d+)?$/;
+
+function parseNumber(str){
+  var s = (str === null || str === undefined) ? "" : String(str);
+  s = s.trim();
+  if (s.length === 0) { return { value: 0, branch: "empty after trim, returns 0" }; }
+  if (DECIMAL_RE.test(s)) {
+    return { value: parseFloat(s), branch: "signed decimal, optional point and exponent" };
+  }
+  if (s.charAt(0) === "0" && s.length > 2 && s.charAt(1) === "x" && /^[0-9a-fA-F]+$/.test(s.slice(2))) {
+    var hex = s.slice(2).replace(/^0+/, "");
+    if (hex.length > 8) { return { value: NaN, branch: "0x hex wider than Int32, NaN" }; }
+    if (hex.length === 0) { return { value: 0, branch: "lowercase 0x hex read as signed Int32" }; }
+    return { value: parseInt(hex, 16) | 0, branch: "lowercase 0x hex read as signed Int32" };
+  }
+  if (s.charAt(0) === "0" && s.length > 2 && s.charAt(1) === "o" && /^[0-7]+$/.test(s.slice(2))) {
+    var oct = s.slice(2).replace(/^0+/, "");
+    if (oct.length > 11) { return { value: NaN, branch: "0o octal wider than Int32, NaN" }; }
+    var ov = oct.length === 0 ? 0 : parseInt(oct, 8);
+    if (ov > 4294967295) { return { value: NaN, branch: "0o octal wider than Int32, NaN" }; }
+    return { value: ov | 0, branch: "lowercase 0o octal read as signed Int32" };
+  }
+  /* The Infinity literal is matched case insensitively. Measured on a GitHub
+     hosted ubuntu-latest runner on 2026-09-21, run 35656787367: 'infinity',
+     'Infinity' and 'INFINITY' are all greater than 0, and 'NaN' is not. */
+  var lower = s.toLowerCase();
+  if (lower === "infinity") { return { value: Infinity, branch: "Infinity literal, matched case insensitively" }; }
+  if (lower === "-infinity") { return { value: -Infinity, branch: "-Infinity literal, matched case insensitively" }; }
+  return { value: NaN, branch: "no branch matched, NaN" };
+}
+
+/* ---- G15, the runner's number to string format.
+   ExpressionConstants.cs line 35 sets NumberFormat to "G15" and
+   EvaluationResult.ConvertToString formats every Number with it. Round 15
+   significant digits, ties to even, scientific below 1e-4 or at 1e15 and above. ---- */
+function g15(n){
+  if (typeof n !== "number" || n !== n) { return "NaN"; }
+  if (n === Infinity) { return "Infinity"; }
+  if (n === -Infinity) { return "-Infinity"; }
+  if (n === 0) { return Object.is(n, -0) ? "-0" : "0"; }
+  var neg = n < 0;
+  var a = Math.abs(n);
+  var m = /^(\d)\.(\d+)e([+-]\d+)$/.exec(a.toExponential(30));
+  var all = m[1] + m[2];
+  var exp = parseInt(m[3], 10);
+  var keep = all.slice(0, 15).split("");
+  var rest = all.slice(15);
+  var roundUp = false;
+  if (rest.charAt(0) > "5") {
+    roundUp = true;
+  } else if (rest.charAt(0) === "5") {
+    roundUp = /[1-9]/.test(rest.slice(1)) ? true : (Number(keep[14]) % 2 === 1);
+  }
+  if (roundUp) {
+    var i = 14;
+    while (i >= 0) {
+      if (keep[i] === "9") { keep[i] = "0"; i--; }
+      else { keep[i] = String(Number(keep[i]) + 1); break; }
+    }
+    if (i < 0) { keep.unshift("1"); keep.pop(); exp++; }
+  }
+  var digits = keep.join("").replace(/0+$/, "");
+  if (digits === "") { digits = "0"; exp = 0; }
+  var out;
+  if (exp < -4 || exp >= 15) {
+    out = digits.charAt(0) + (digits.length > 1 ? "." + digits.slice(1) : "");
+    var es = String(Math.abs(exp));
+    while (es.length < 2) { es = "0" + es; }
+    out += "E" + (exp < 0 ? "-" : "+") + es;
+  } else if (exp >= 0) {
+    out = digits.length <= exp + 1
+      ? digits + repeat("0", exp + 1 - digits.length)
+      : digits.slice(0, exp + 1) + "." + digits.slice(exp + 1);
+  } else {
+    out = "0." + repeat("0", -exp - 1) + digits;
+  }
+  return (neg ? "-" : "") + out;
+}
+function repeat(c, n){ var s = ""; for (var i = 0; i < n; i++) { s += c; } return s; }
+
+/* ---- Ordinal ignore case folding.
+   The runner compares strings with StringComparison.OrdinalIgnoreCase, which
+   applies the invariant simple uppercase mapping one UTF-16 unit at a time. Two
+   things a plain toUpperCase() call gets wrong and this does not: U+0131 LATIN
+   SMALL LETTER DOTLESS I is left alone, and a unit whose uppercase form is more
+   than one unit long is left alone rather than expanded. ---- */
+function toUpperSpecial(s){
+  var out = "";
+  for (var i = 0; i < s.length; i++) {
+    var c = s.charAt(i);
+    if (c === "ı") { out += c; continue; }
+    var u = c.toUpperCase();
+    out += (u.length === 1) ? u : c;
+  }
+  return out;
+}
+
+/* ---- ConvertToString, EvaluationResult.cs lines 136 to 155 ---- */
+function convertToString(val){
+  switch (val.kind) {
+    case "Null": return "";
+    case "Boolean": return val.v ? "true" : "false";
+    case "Number": return g15(val.v);
+    case "String": return val.v;
+    default: return val.kind;
+  }
+}
+
+/* ---- ConvertToNumber, EvaluationResult.cs lines 402 to 418 ---- */
+function convertToNumber(val){
+  switch (val.kind) {
+    case "Null": return { value: 0, branch: "Null casts to 0" };
+    case "Boolean": return { value: val.v ? 1 : 0, branch: "Boolean casts to " + (val.v ? "1" : "0") };
+    case "Number": return { value: val.v, branch: "already a Number" };
+    case "String": return parseNumber(val.v);
+    default: return { value: NaN, branch: "container casts to NaN" };
+  }
+}
+
+/* ---- IsFalsy, EvaluationResult.cs lines 50 to 71 ---- */
+function isFalsy(val){
+  switch (val.kind) {
+    case "Null": return true;
+    case "Boolean": return !val.v;
+    case "Number": return val.v === 0 || val.v !== val.v;
+    case "String": return val.v === "";
+    default: return false;
+  }
+}
+function isTruthy(val){ return !isFalsy(val); }
+
+function falsyReason(val){
+  switch (val.kind) {
+    case "Null": return "Null is always falsy";
+    case "Boolean": return val.v ? "Boolean true is truthy" : "Boolean false is falsy";
+    case "Number":
+      if (val.v !== val.v) { return "NaN is falsy"; }
+      return val.v === 0 ? "the number 0 is falsy" : "any non zero number is truthy";
+    case "String":
+      return val.v === "" ? "only the exactly empty string is falsy" :
+        "a non empty string is truthy, with no trimming and no case folding";
+    default: return val.kind + " is always truthy";
+  }
+}
+
+/* ---- CoerceTypes, EvaluationResult.cs lines 360 to 397 ---- */
+function coerceTypes(l, r, notes, depth){
+  if (depth > 8) { fail("CoerceTypes recursed too far"); }
+  if (l.kind === r.kind) {
+    notes.push("same kind (" + l.kind + "), no cast applied");
+    return [l, r];
+  }
+  if (l.kind === "Number" && r.kind === "String") {
+    var pr = parseNumber(r.v);
+    notes.push("Number versus String, right cast by ParseNumber (" + pr.branch + ") to " + g15(pr.value));
+    return [l, mk("Number", pr.value)];
+  }
+  if (l.kind === "String" && r.kind === "Number") {
+    var pl = parseNumber(l.v);
+    notes.push("String versus Number, left cast by ParseNumber (" + pl.branch + ") to " + g15(pl.value));
+    return [mk("Number", pl.value), r];
+  }
+  if (l.kind === "Boolean" || l.kind === "Null") {
+    var cl = convertToNumber(l);
+    notes.push(l.kind + " on the left, cast to number " + g15(cl.value) + " and recursed");
+    return coerceTypes(mk("Number", cl.value), r, notes, depth + 1);
+  }
+  if (r.kind === "Boolean" || r.kind === "Null") {
+    var cr = convertToNumber(r);
+    notes.push(r.kind + " on the right, cast to number " + g15(cr.value) + " and recursed");
+    return coerceTypes(l, mk("Number", cr.value), notes, depth + 1);
+  }
+  notes.push("no cast branch covers " + l.kind + " versus " + r.kind);
+  return [l, r];
+}
+
+/* ---- AbstractEqual, EvaluationResult.cs lines 227 to 272 ---- */
+function abstractEqual(l, r, out){
+  var notes = [];
+  var p = coerceTypes(l, r, notes, 0);
+  out.cast = notes.join("; ");
+  var a = p[0], b = p[1];
+  if (a.kind !== b.kind) {
+    out.branch = "kinds still differ after CoerceTypes, returned false";
+    return false;
+  }
+  switch (a.kind) {
+    case "Null":
+      out.branch = "Null and Null, always equal";
+      return true;
+    case "Number":
+      if (a.v !== a.v || b.v !== b.v) { out.branch = "Number and Number, NaN on one side, returned false"; return false; }
+      out.branch = "Number and Number, numeric equality";
+      return a.v === b.v;
+    case "String":
+      out.branch = "String and String, OrdinalIgnoreCase";
+      return toUpperSpecial(a.v) === toUpperSpecial(b.v);
+    case "Boolean":
+      out.branch = "Boolean and Boolean, plain equality";
+      return a.v === b.v;
+    default:
+      out.branch = a.kind + " and " + a.kind + ", reference equality";
+      return a.v === b.v;
+  }
+}
+
+/* ---- AbstractGreaterThan and AbstractLessThan, EvaluationResult.cs lines 278 to 356 ---- */
+function abstractRelational(l, r, want, out){
+  var notes = [];
+  var p = coerceTypes(l, r, notes, 0);
+  out.cast = notes.join("; ");
+  var a = p[0], b = p[1];
+  if (a.kind !== b.kind) {
+    out.branch = "kinds still differ after CoerceTypes, returned false";
+    return false;
+  }
+  switch (a.kind) {
+    case "Number":
+      if (a.v !== a.v || b.v !== b.v) { out.branch = "Number and Number, NaN on one side, returned false"; return false; }
+      out.branch = "Number and Number, numeric comparison";
+      return want === "gt" ? a.v > b.v : a.v < b.v;
+    case "String":
+      out.branch = "String and String, OrdinalIgnoreCase";
+      var ua = toUpperSpecial(a.v), ub = toUpperSpecial(b.v);
+      return want === "gt" ? ua > ub : ua < ub;
+    case "Boolean":
+      out.branch = "Boolean and Boolean";
+      return want === "gt" ? (a.v && !b.v) : (!a.v && b.v);
+    default:
+      out.branch = a.kind + " has no relational branch, returned false";
+      return false;
+  }
+}
+
+/* ================= lexer ================= */
+function isBoundary(c){
+  if ("([)],.!><=&|".indexOf(c) >= 0) { return true; }
+  return /\s/.test(c);
+}
+function isDigit(c){ return c >= "0" && c <= "9"; }
+function isLegalKeyword(s){
+  if (s === "") { return false; }
+  var f = s.charAt(0);
+  if (!((f >= "a" && f <= "z") || (f >= "A" && f <= "Z") || f === "_")) { return false; }
+  for (var i = 1; i < s.length; i++) {
+    var c = s.charAt(i);
+    if (!((c >= "a" && c <= "z") || (c >= "A" && c <= "Z") || isDigit(c) || c === "_" || c === "-")) {
+      return false;
+    }
+  }
+  return true;
+}
+
+function lex(input){
+  var toks = [];
+  var i = 0, n = input.length;
+  function last(){ return toks.length ? toks[toks.length - 1] : null; }
+  function push(type, text, start, value){ toks.push({ type: type, text: text, pos: start, value: value }); }
+  while (i < n) {
+    var c = input.charAt(i);
+    var start = i;
+    if (/\s/.test(c)) { i++; continue; }
+    if (c === "(") { push("punct", "(", start); i++; continue; }
+    if (c === ")") { push("punct", ")", start); i++; continue; }
+    if (c === "[") { push("punct", "[", start); i++; continue; }
+    if (c === "]") { push("punct", "]", start); i++; continue; }
+    if (c === ",") { push("punct", ",", start); i++; continue; }
+    if (c === "*") { push("star", "*", start); i++; continue; }
+    if (c === "'") { i = readString(input, i, toks); continue; }
+    if (c === "!") {
+      if (input.charAt(i + 1) === "=") { push("op", "!=", start); i += 2; }
+      else { push("op", "!", start); i++; }
+      continue;
+    }
+    if (c === "=") {
+      if (input.charAt(i + 1) === "=") { push("op", "==", start); i += 2; continue; }
+      fail("Unexpected token '=' at position " + start + ". A single '=' is not an operator, use '=='.");
+    }
+    if (c === "<" || c === ">") {
+      if (input.charAt(i + 1) === "=") { push("op", c + "=", start); i += 2; }
+      else { push("op", c, start); i++; }
+      continue;
+    }
+    if (c === "&") {
+      if (input.charAt(i + 1) === "&") { push("op", "&&", start); i += 2; continue; }
+      fail("Unexpected token '&' at position " + start + ". A single '&' is not an operator, use '&&'.");
+    }
+    if (c === "|") {
+      if (input.charAt(i + 1) === "|") { push("op", "||", start); i += 2; continue; }
+      fail("Unexpected token '|' at position " + start + ". A single '|' is not an operator, use '||'.");
+    }
+    if (c === ".") {
+      var lt = last();
+      var deref = lt && (lt.type === "name" || lt.type === "prop" || lt.type === "star" ||
+                         (lt.type === "punct" && (lt.text === "]" || lt.text === ")")));
+      if (deref) { push("punct", ".", start); i++; continue; }
+      i = readNumber(input, i, toks);
+      continue;
+    }
+    if (c === "-" || c === "+" || isDigit(c)) { i = readNumber(input, i, toks); continue; }
+    i = readKeyword(input, i, toks);
+  }
+  toks.push({ type: "eof", text: "", pos: n });
+  return toks;
+
+  function readString(src, from, out){
+    var j = from + 1;
+    var buf = "";
+    while (j < src.length) {
+      var ch = src.charAt(j);
+      if (ch === "'") {
+        if (src.charAt(j + 1) === "'") { buf += "'"; j += 2; continue; }
+        out.push({ type: "str", text: src.slice(from, j + 1), pos: from, value: buf });
+        return j + 1;
+      }
+      buf += ch;
+      j++;
+    }
+    fail("Unterminated string literal starting at position " + from + ".");
+  }
+
+  function readNumber(src, from, out){
+    var j = from + 1;
+    while (j < src.length && (!isBoundary(src.charAt(j)) || src.charAt(j) === ".")) { j++; }
+    var raw = src.slice(from, j);
+    var pn = parseNumber(raw);
+    if (pn.value !== pn.value) {
+      fail("Unexpected token '" + raw + "' at position " + from + ". It is not a number the runner accepts.");
+    }
+    out.push({ type: "num", text: raw, pos: from, value: pn.value });
+    return j;
+  }
+
+  function readKeyword(src, from, out){
+    var j = from + 1;
+    while (j < src.length && !isBoundary(src.charAt(j))) { j++; }
+    var raw = src.slice(from, j);
+    if (!isLegalKeyword(raw)) {
+      fail("Unexpected token '" + raw + "' at position " + from + ".");
+    }
+    var prev = out.length ? out[out.length - 1] : null;
+    if (prev && prev.type === "punct" && prev.text === ".") {
+      out.push({ type: "prop", text: raw, pos: from, value: raw });
+      return j;
+    }
+    if (raw === "null") { out.push({ type: "null", text: raw, pos: from }); return j; }
+    if (raw === "true") { out.push({ type: "bool", text: raw, pos: from, value: true }); return j; }
+    if (raw === "false") { out.push({ type: "bool", text: raw, pos: from, value: false }); return j; }
+    if (raw === "NaN") { out.push({ type: "num", text: raw, pos: from, value: NaN }); return j; }
+    if (raw === "Infinity") { out.push({ type: "num", text: raw, pos: from, value: Infinity }); return j; }
+    var k = j;
+    while (k < src.length && /\s/.test(src.charAt(k))) { k++; }
+    if (src.charAt(k) === "(") { out.push({ type: "func", text: raw, pos: from, value: raw }); return j; }
+    out.push({ type: "name", text: raw, pos: from, value: raw });
+    return j;
+  }
+}
+
+/* ================= parser ================= */
+function parse(tokens){
+  var pos = 0;
+  var depth = 0;
+  var nodes = 0;
+
+  function peek(){ return tokens[pos]; }
+  function take(){ return tokens[pos++]; }
+  function isOp(t){ var k = peek(); return k.type === "op" && k.text === t; }
+  function isPunct(t){ var k = peek(); return k.type === "punct" && k.text === t; }
+  function expectPunct(t){
+    if (!isPunct(t)) {
+      var g = peek();
+      fail("Expected '" + t + "' but found " + describe(g) + " at position " + g.pos + ".");
+    }
+    return take();
+  }
+  function node(o){
+    nodes++;
+    if (nodes > MAX_NODES) { fail("Expression has more than " + MAX_NODES + " nodes, refused."); }
+    return o;
+  }
+  function down(f){
+    depth++;
+    if (depth > MAX_DEPTH) {
+      fail("Expression nests deeper than the runner's MaxDepth of " + MAX_DEPTH + ", refused.");
+    }
+    var r = f();
+    depth--;
+    return r;
+  }
+
+  var root = parseOr();
+  if (peek().type !== "eof") {
+    var extra = peek();
+    fail("Unexpected token " + describe(extra) + " at position " + extra.pos + ".");
+  }
+  return root;
+
+  function parseOr(){
+    return down(function(){
+      var left = parseAnd();
+      while (isOp("||")) { take(); left = node({ t: "logic", op: "||", l: left, r: parseAnd() }); }
+      return left;
+    });
+  }
+  function parseAnd(){
+    var left = parseEquality();
+    while (isOp("&&")) { take(); left = node({ t: "logic", op: "&&", l: left, r: parseEquality() }); }
+    return left;
+  }
+  function parseEquality(){
+    var left = parseComparison();
+    while (isOp("==") || isOp("!=")) {
+      var op = take().text;
+      left = node({ t: "cmp", op: op, l: left, r: parseComparison() });
+    }
+    return left;
+  }
+  function parseComparison(){
+    var left = parseUnary();
+    while (isOp("<") || isOp("<=") || isOp(">") || isOp(">=")) {
+      var op = take().text;
+      left = node({ t: "cmp", op: op, l: left, r: parseUnary() });
+    }
+    return left;
+  }
+  function parseUnary(){
+    if (isOp("!")) {
+      return down(function(){ take(); return node({ t: "not", e: parseUnary() }); });
+    }
+    return parsePostfix();
+  }
+  function parsePostfix(){
+    var e = parsePrimary();
+    for (;;) {
+      if (isPunct(".")) {
+        take();
+        var k = peek();
+        if (k.type === "star") { take(); e = node({ t: "wild", e: e }); continue; }
+        if (k.type !== "prop") {
+          fail("Expected a property name after '.' but found " + describe(k) + " at position " + k.pos + ".");
+        }
+        take();
+        e = node({ t: "prop", e: e, name: k.value });
+        continue;
+      }
+      if (isPunct("[")) {
+        take();
+        if (peek().type === "star") { take(); expectPunct("]"); e = node({ t: "wild", e: e }); continue; }
+        var ix = parseOr();
+        expectPunct("]");
+        e = node({ t: "index", e: e, index: ix });
+        continue;
+      }
+      return e;
+    }
+  }
+  function parsePrimary(){
+    var k = peek();
+    if (k.type === "num") { take(); return node({ t: "lit", kind: "Number", v: k.value, text: k.text }); }
+    if (k.type === "str") { take(); return node({ t: "lit", kind: "String", v: k.value, text: k.text }); }
+    if (k.type === "bool") { take(); return node({ t: "lit", kind: "Boolean", v: k.value, text: k.text }); }
+    if (k.type === "null") { take(); return node({ t: "lit", kind: "Null", v: null, text: "null" }); }
+    if (k.type === "name") { take(); return node({ t: "name", name: k.value }); }
+    if (k.type === "func") {
+      take();
+      expectPunct("(");
+      var args = [];
+      if (!isPunct(")")) {
+        args.push(parseOr());
+        while (isPunct(",")) { take(); args.push(parseOr()); }
+      }
+      expectPunct(")");
+      return node({ t: "call", name: k.value, args: args });
+    }
+    if (isPunct("(")) {
+      take();
+      var inner = parseOr();
+      expectPunct(")");
+      return node({ t: "group", e: inner });
+    }
+    if (k.type === "eof") { fail("Expression ended unexpectedly."); }
+    fail("Unexpected token " + describe(k) + " at position " + k.pos + ".");
+  }
+}
+
+function describe(tok){
+  if (tok.type === "eof") { return "the end of the expression"; }
+  return "'" + tok.text + "'";
+}
+
+/* ================= context access ================= */
+function ownKeys(obj){
+  var out = [];
+  for (var k in obj) {
+    if (Object.prototype.hasOwnProperty.call(obj, k)) { out.push(k); }
+  }
+  return out;
+}
+/* Case insensitive own property read. Nothing is ever assigned onto a user
+   supplied object, and no key is looked up through the prototype chain, so
+   __proto__, constructor and prototype are ordinary data keys here. */
+function getMember(obj, name){
+  var want = String(name).toLowerCase();
+  var keys = ownKeys(obj);
+  for (var i = 0; i < keys.length; i++) {
+    if (keys[i].toLowerCase() === want) { return { found: true, value: obj[keys[i]] }; }
+  }
+  return { found: false, value: undefined };
+}
+
+/* ================= evaluator ================= */
+function evaluate(root, ctxObj){
+  var trace = [];
+  var steps = 0;
+
+  function record(row){
+    steps++;
+    if (steps > MAX_NODES) { fail("Trace exceeded " + MAX_NODES + " steps, refused."); }
+    trace.push(row);
+  }
+
+  function show(val){
+    if (val.kind === "String") { return "'" + val.v + "'"; }
+    if (val.kind === "Number") { return g15(val.v); }
+    if (val.kind === "Null") { return "null"; }
+    if (val.kind === "Boolean") { return val.v ? "true" : "false"; }
+    if (val.kind === "Array") { return "Array(" + val.v.length + ")"; }
+    return "Object(" + ownKeys(val.v).length + " keys)";
+  }
+  function withKind(val){ return show(val) + "  [" + val.kind + "]"; }
+
+  function ev(n){
+    switch (n.t) {
+      case "lit": {
+        var v = mk(n.kind, n.v);
+        record({ node: "literal " + n.text, left: "", right: "", cast: "", branch: "", result: withKind(v) });
+        return v;
+      }
+      case "group": return ev(n.e);
+      case "name": {
+        var g = getMember(ctxObj, n.name);
+        if (!g.found) {
+          var nv = nul();
+          record({ node: n.name, left: "", right: "", cast: "",
+                   branch: n.name + " not present in context, resolved to Null", result: withKind(nv) });
+          return nv;
+        }
+        var rv = fromJs(g.value);
+        record({ node: n.name, left: "", right: "", cast: "", branch: "read from context", result: withKind(rv) });
+        return rv;
+      }
+      case "prop": {
+        var base = ev(n.e);
+        var out = propAccess(base, n.name);
+        record({ node: "." + n.name, left: withKind(base), right: "", cast: "",
+                 branch: out.why, result: withKind(out.value) });
+        return out.value;
+      }
+      case "index": {
+        var b2 = ev(n.e);
+        var ixv = ev(n.index);
+        var out2 = indexAccess(b2, ixv);
+        record({ node: "[ index ]", left: withKind(b2), right: withKind(ixv), cast: "",
+                 branch: out2.why, result: withKind(out2.value) });
+        return out2.value;
+      }
+      case "wild": {
+        var b3 = ev(n.e);
+        var out3 = wildAccess(b3);
+        record({ node: ".*", left: withKind(b3), right: "", cast: "",
+                 branch: out3.why, result: withKind(out3.value) });
+        return out3.value;
+      }
+      case "not": {
+        var inner = ev(n.e);
+        var res = mk("Boolean", isFalsy(inner));
+        record({ node: "!", left: withKind(inner), right: "", cast: "",
+                 branch: "! returns the falsiness of its operand, " + falsyReason(inner),
+                 result: withKind(res) });
+        return res;
+      }
+      case "logic": {
+        var l = ev(n.l);
+        var shortCircuit = (n.op === "&&") ? isFalsy(l) : isTruthy(l);
+        if (shortCircuit) {
+          record({ node: n.op, left: withKind(l), right: "not evaluated", cast: "",
+                   branch: "short circuit, " + falsyReason(l) + ", the left operand is the result",
+                   result: withKind(l) });
+          return l;
+        }
+        var r = ev(n.r);
+        record({ node: n.op, left: withKind(l), right: withKind(r), cast: "",
+                 branch: "no short circuit, the right operand is the result",
+                 result: withKind(r) });
+        return r;
+      }
+      case "cmp": {
+        var lv = ev(n.l);
+        var rv2 = ev(n.r);
+        var out4 = { cast: "", branch: "" };
+        var b;
+        if (n.op === "==") { b = abstractEqual(lv, rv2, out4); }
+        else if (n.op === "!=") { b = !abstractEqual(lv, rv2, out4); out4.branch += " (negated by !=)"; }
+        else if (n.op === ">") { b = abstractRelational(lv, rv2, "gt", out4); }
+        else if (n.op === "<") { b = abstractRelational(lv, rv2, "lt", out4); }
+        else if (n.op === ">=") {
+          var e1 = { cast: "", branch: "" };
+          var eq = abstractEqual(lv, rv2, e1);
+          if (eq) { b = true; out4.cast = e1.cast; out4.branch = e1.branch + ", >= is equal or greater"; }
+          else { b = abstractRelational(lv, rv2, "gt", out4); out4.branch += ", >= is equal or greater"; }
+        } else {
+          var e2 = { cast: "", branch: "" };
+          var eq2 = abstractEqual(lv, rv2, e2);
+          if (eq2) { b = true; out4.cast = e2.cast; out4.branch = e2.branch + ", <= is equal or less"; }
+          else { b = abstractRelational(lv, rv2, "lt", out4); out4.branch += ", <= is equal or less"; }
+        }
+        var res2 = mk("Boolean", b);
+        record({ node: n.op, left: withKind(lv), right: withKind(rv2), cast: out4.cast,
+                 branch: out4.branch, result: withKind(res2) });
+        res2.operands = { op: n.op, l: lv, r: rv2 };
+        return res2;
+      }
+      case "call": return callFunction(n, ev, record, withKind);
+    }
+    fail("Unsupported node.");
+  }
+
+  var value = ev(root);
+  return { value: value, trace: trace };
+}
+
+function propAccess(base, name){
+  if (base.filtered) {
+    var acc = [];
+    for (var i = 0; i < base.v.length; i++) {
+      var item = base.v[i];
+      if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+        var g = getMember(item, name);
+        if (g.found) { acc.push(g.value); }
+      }
+    }
+    var fa = mk("Array", acc); fa.filtered = true;
+    return { value: fa, why: "filtered array, collected '" + name + "' from each Object element" };
+  }
+  if (base.kind === "Object") {
+    var g2 = getMember(base.v, name);
+    if (g2.found) { return { value: fromJs(g2.value), why: "Object property read, case insensitive" }; }
+    return { value: nul(), why: "'" + name + "' not present on this Object, resolved to Null" };
+  }
+  return { value: nul(), why: "property access on " + base.kind + " resolves to Null" };
+}
+
+function indexAccess(base, ix){
+  var str = (ix.kind === "Null" || ix.kind === "Boolean" || ix.kind === "Number" || ix.kind === "String")
+    ? convertToString(ix) : undefined;
+  var num = convertToNumber(ix).value;
+  var idx = (num === num && num !== Infinity && num !== -Infinity && num >= 0) ? Math.floor(num) : undefined;
+
+  if (base.filtered) {
+    var acc = [];
+    for (var i = 0; i < base.v.length; i++) {
+      var item = base.v[i];
+      if (item !== null && typeof item === "object" && !Array.isArray(item)) {
+        if (str !== undefined) { var g = getMember(item, str); if (g.found) { acc.push(g.value); } }
+      } else if (Array.isArray(item)) {
+        if (idx !== undefined && idx < item.length) { acc.push(item[idx]); }
+      }
+    }
+    var fa = mk("Array", acc); fa.filtered = true;
+    return { value: fa, why: "filtered array index" };
+  }
+  if (base.kind === "Array") {
+    if (idx !== undefined && idx < base.v.length) {
+      return { value: fromJs(base.v[idx]), why: "Array index " + idx };
+    }
+    return { value: nul(), why: "Array index out of range or not a non negative number, resolved to Null" };
+  }
+  if (base.kind === "Object") {
+    if (str !== undefined) {
+      var g3 = getMember(base.v, str);
+      if (g3.found) { return { value: fromJs(g3.value), why: "Object key '" + str + "', case insensitive" }; }
+    }
+    return { value: nul(), why: "key not present on this Object, resolved to Null" };
+  }
+  return { value: nul(), why: "index access on " + base.kind + " resolves to Null" };
+}
+
+function wildAccess(base){
+  if (base.filtered) {
+    var acc = [];
+    for (var i = 0; i < base.v.length; i++) {
+      var item = base.v[i];
+      if (Array.isArray(item)) { acc = acc.concat(item); }
+      else if (item !== null && typeof item === "object") {
+        var ks = ownKeys(item);
+        for (var j = 0; j < ks.length; j++) { acc.push(item[ks[j]]); }
+      }
+    }
+    var f0 = mk("Array", acc); f0.filtered = true;
+    return { value: f0, why: "wildcard over a filtered array" };
+  }
+  if (base.kind === "Array") {
+    var f1 = mk("Array", base.v.slice()); f1.filtered = true;
+    return { value: f1, why: "wildcard over an Array, every element" };
+  }
+  if (base.kind === "Object") {
+    var vals = [];
+    var keys = ownKeys(base.v);
+    for (var k = 0; k < keys.length; k++) { vals.push(base.v[keys[k]]); }
+    var f2 = mk("Array", vals); f2.filtered = true;
+    return { value: f2, why: "wildcard over an Object, every value" };
+  }
+  var f3 = mk("Array", []); f3.filtered = true;
+  return { value: f3, why: "wildcard on " + base.kind + " gives an empty filtered array" };
+}
+
+/* ================= functions ================= */
+var REFUSED = {
+  hashfiles: "hashFiles is refused. It hashes files in the runner workspace, and this page has no workspace and reads no files.",
+  success: "success() is refused. It reads job status from the runner, which does not exist in a browser.",
+  failure: "failure() is refused. It reads job status from the runner, which does not exist in a browser.",
+  always: "always() is refused. It reads job status from the runner, which does not exist in a browser.",
+  cancelled: "cancelled() is refused. It reads job status from the runner, which does not exist in a browser.",
+  tojson: "toJSON is refused. The runner writes JSON through its own writer, which was not reproduced and verified here, so this returns a refusal instead of a guess."
+};
+
+function callFunction(n, ev, record, withKind){
+  var name = n.name.toLowerCase();
+  if (Object.prototype.hasOwnProperty.call(REFUSED, name)) { fail(REFUSED[name]); }
+  var args = [];
+  for (var i = 0; i < n.args.length; i++) { args.push(ev(n.args[i])); }
+
+  function arity(min, max){
+    if (args.length < min || args.length > max) {
+      fail(n.name + " takes " + (min === max ? min : min + " to " + max) +
+           " argument" + (max === 1 ? "" : "s") + ", " + args.length + " given.");
+    }
+  }
+  var value, why;
+  switch (name) {
+    case "contains": {
+      arity(2, 2);
+      var l = args[0], r = args[1];
+      if (l.kind !== "Array" && l.kind !== "Object") {
+        if (r.kind === "Array" || r.kind === "Object") {
+          value = mk("Boolean", false);
+          why = "search is primitive but item is a container, returned false";
+        } else {
+          var hay = toUpperSpecial(convertToString(l));
+          var ned = toUpperSpecial(convertToString(r));
+          value = mk("Boolean", hay.indexOf(ned) >= 0);
+          why = "both primitive, OrdinalIgnoreCase substring test";
+        }
+      } else if (l.kind === "Array") {
+        var found = false;
+        for (var a = 0; a < l.v.length && !found; a++) {
+          var o = { cast: "", branch: "" };
+          if (abstractEqual(r, fromJs(l.v[a]), o)) { found = true; }
+        }
+        value = mk("Boolean", found);
+        why = l.v.length === 0 ? "empty Array, returned false"
+                               : "Array search, AbstractEqual against each element";
+      } else {
+        value = mk("Boolean", false);
+        why = "search is an Object, returned false";
+      }
+      break;
+    }
+    case "startswith":
+    case "endswith": {
+      arity(2, 2);
+      var l2 = args[0], r2 = args[1];
+      if (l2.kind === "Array" || l2.kind === "Object" || r2.kind === "Array" || r2.kind === "Object") {
+        value = mk("Boolean", false);
+        why = "a container operand, returned false";
+      } else {
+        var s1 = toUpperSpecial(convertToString(l2));
+        var s2 = toUpperSpecial(convertToString(r2));
+        var hit = name === "startswith"
+          ? s1.slice(0, s2.length) === s2
+          : (s2.length === 0 ? true : s1.slice(s1.length - s2.length) === s2);
+        value = mk("Boolean", hit);
+        why = "OrdinalIgnoreCase " + (name === "startswith" ? "prefix" : "suffix") + " test";
+      }
+      break;
+    }
+    case "join": {
+      arity(1, 2);
+      var items = args[0];
+      if (items.kind === "Array" && items.v.length > 0) {
+        var sep = ",";
+        if (args.length > 1 && args[1].kind !== "Array" && args[1].kind !== "Object") {
+          sep = convertToString(args[1]);
+        }
+        var parts = [];
+        for (var b = 0; b < items.v.length; b++) { parts.push(convertToString(fromJs(items.v[b]))); }
+        value = mk("String", parts.join(sep));
+        why = "Array joined, each element through ConvertToString";
+      } else if (items.kind !== "Array" && items.kind !== "Object") {
+        value = mk("String", convertToString(items));
+        why = "primitive, returned as its ConvertToString form";
+      } else {
+        value = mk("String", "");
+        why = "empty Array or Object, returned the empty string";
+      }
+      break;
+    }
+    case "fromjson": {
+      arity(1, 1);
+      var txt = convertToString(args[0]);
+      if (txt.trim() === "") { fail("fromJSON was given empty input."); }
+      if (txt.length > MAX_CONTEXT_CHARS) { fail("fromJSON input is longer than " + MAX_CONTEXT_CHARS + " characters, refused."); }
+      var parsed;
+      try { parsed = JSON.parse(txt); }
+      catch (e) { fail("fromJSON could not parse its argument. " + e.message); }
+      value = fromJs(parsed);
+      why = "parsed as JSON, a fresh object every call, which is why two fromJSON results are never reference equal";
+      break;
+    }
+    case "format": {
+      arity(1, 255);
+      value = mk("String", formatFn(args));
+      why = "format string expanded, arguments through ConvertToString";
+      break;
+    }
+    default:
+      fail("Unknown function '" + n.name + "'.");
+  }
+  record({ node: n.name + "()", left: "", right: "", cast: "", branch: why, result: withKind(value) });
+  return value;
+}
+
+/* format, reimplemented from Format.cs */
+function formatFn(args){
+  var fs = convertToString(args[0]);
+  var out = [];
+  var index = 0;
+  var guard = 0;
+  while (index < fs.length) {
+    if (++guard > MAX_EXPR_LEN) { fail("format string is too long to expand."); }
+    var lb = fs.indexOf("{", index);
+    var rb = fs.indexOf("}", index);
+    if (lb >= 0 && (rb < 0 || rb > lb)) {
+      if (fs.charAt(lb + 1) === "{") { out.push(fs.slice(index, lb + 1)); index = lb + 2; continue; }
+      if (rb > lb + 1) {
+        var digits = "";
+        var k = lb + 1;
+        while (k < fs.length && fs.charAt(k) >= "0" && fs.charAt(k) <= "9") { digits += fs.charAt(k); k++; }
+        if (digits.length > 0 && k === rb) {
+          var ai = parseInt(digits, 10);
+          if (1 + ai > args.length - 1) {
+            var supplied = args.length - 1;
+            fail("The format string references argument " + ai + " but only " + supplied +
+                 (supplied === 1 ? " argument was" : " arguments were") + " supplied.");
+          }
+          if (lb > index) { out.push(fs.slice(index, lb)); }
+          out.push(convertToString(args[1 + ai]));
+          index = rb + 1;
+          continue;
+        }
+      }
+      fail("The format string is invalid: " + fs);
+    } else if (rb >= 0) {
+      if (fs.charAt(rb + 1) === "}") { out.push(fs.slice(index, rb + 1)); index = rb + 2; }
+      else { fail("The format string is invalid: " + fs); }
+    } else {
+      out.push(fs.slice(index));
+      break;
+    }
+  }
+  return out.join("");
+}
+
+/* ================= top level ================= */
+function stripWrapper(text){
+  var s = text.trim();
+  if (s.slice(0, 3) === "${{" && s.slice(-2) === "}}") { return s.slice(3, -2).trim(); }
+  return s;
+}
+
+function run(exprText, ctxText){
+  var expr = stripWrapper(exprText);
+  if (expr === "") { return { ok: false, kind: "empty", message: "Enter an expression to evaluate." }; }
+  if (expr.length > MAX_EXPR_LEN) {
+    return { ok: false, kind: "toolong",
+      message: "Expression is " + expr.length + " characters. The runner's MaxLength is " +
+               MAX_EXPR_LEN + " (ExpressionConstants.cs line 31), so this is refused." };
+  }
+  var ctxRaw = (ctxText || "").trim();
+  var ctxObj = {};
+  var ctxNote = "context box is empty, evaluated against {}";
+  if (ctxRaw !== "") {
+    if (ctxRaw.length > MAX_CONTEXT_CHARS) {
+      return { ok: false, kind: "ctx",
+        message: "Context JSON is longer than " + MAX_CONTEXT_CHARS + " characters, refused." };
+    }
+    var parsed;
+    try { parsed = JSON.parse(ctxRaw); }
+    catch (e) { return { ok: false, kind: "ctx", message: "Context JSON did not parse. " + e.message }; }
+    if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) {
+      return { ok: false, kind: "ctx",
+        message: "Context JSON must be an object at the top level, for example {\"github\":{\"ref\":\"refs/heads/main\"}}." };
+    }
+    ctxObj = parsed;
+    ctxNote = "context object with " + ownKeys(ctxObj).length + " top level key(s)";
+  }
+  var tokens, ast, res;
+  try { tokens = lex(expr); }
+  catch (e) { return { ok: false, kind: "lex", message: e.message }; }
+  try { ast = parse(tokens); }
+  catch (e) { return { ok: false, kind: "parse", message: e.message }; }
+  try { res = evaluate(ast, ctxObj); }
+  catch (e) { return { ok: false, kind: "eval", message: e.message }; }
+  return {
+    ok: true, value: res.value, trace: res.trace, ctxNote: ctxNote,
+    root: ast, expr: expr
+  };
+}
+
+/* raw JavaScript side, for the side by side column. Real operators on the
+   underlying JavaScript values, no string evaluation anywhere. */
+function toJsValue(val){
+  if (val.kind === "Null") { return null; }
+  return val.v;
+}
+function jsCompare(op, l, r){
+  var a = toJsValue(l), b = toJsValue(r);
+  switch (op) {
+    case "==": return a == b;
+    case "!=": return a != b;
+    case "<": return a < b;
+    case "<=": return a <= b;
+    case ">": return a > b;
+    case ">=": return a >= b;
+  }
+  return undefined;
+}
+
+/* ---- self test ---- */
+function assertions(){
+  var A = [];
+  function expr(e, ctx, want, note){ A.push({ kind: "expr", e: e, ctx: ctx || "{}", want: want, note: note || "" }); }
+  function num(s, want){ A.push({ kind: "num", s: s, want: want }); }
+  function fmt(n, want){ A.push({ kind: "g15", n: n, want: want }); }
+  function refuse(e, needle){ A.push({ kind: "refuse", e: e, needle: needle }); }
+
+  /* the headline receipt */
+  expr("github.ref == 'refs/heads/main'", '{"github":{"ref":"refs/heads/Main"}}', true,
+       "a release guard fires on a capitalised ref");
+  expr("github.ref == 'refs/heads/main'", '{"github":{"ref":"refs/heads/develop"}}', false);
+
+  /* the four divergences */
+  expr("'ABC' == 'abc'", "{}", true);
+  expr("null == 0", "{}", true);
+  expr("null == ''", "{}", true);
+  expr("fromJSON('[]') == 0", "{}", false);
+  expr("fromJSON('[]') == fromJSON('[]')", "{}", false);
+  expr("fromJSON('{}') == fromJSON('{}')", "{}", false);
+
+  /* the four that match JavaScript */
+  expr("'' == 0", "{}", true);
+  expr("0 == '0'", "{}", true);
+  expr("'' == '0'", "{}", false);
+  expr("'true' == true", "{}", false);
+
+  /* ParseNumber reached through a comparison */
+  expr("'0x10' == 16", "{}", true);
+  expr("'0o17' == 15", "{}", true);
+  expr("' 1 ' == 1", "{}", true);
+  expr("'1e1' == 10", "{}", true);
+  expr("'+5' == 5", "{}", true);
+  expr("'0b101' == 5", "{}", false, "no binary branch in the runner");
+  expr("'0X10' == 16", "{}", false, "the hex branch tests lowercase x only");
+  expr("'0O17' == 15", "{}", false, "the octal branch tests lowercase o only");
+  expr("'0xFFFFFFFF' == -1", "{}", true, "Int32 hex parse is two's complement");
+  expr("'0x100000000' == 4294967296", "{}", false, "wider than Int32, NaN");
+
+  /* the Infinity literal, measured on a GitHub hosted ubuntu-latest runner on
+     2026-09-21. Equality alone cannot separate Infinity from NaN, because both
+     'infinity' == 0 and 'NaN' == 0 are false, so the case question is settled
+     with a relational comparison. Runs 35656695534 and 35656787367. */
+  expr("'infinity' == 0", "{}", false, "measured on a hosted runner, run 35656695534");
+  expr("'infinity' > 0", "{}", true, "measured on a hosted runner, run 35656787367: lowercase parses to Infinity");
+  expr("'Infinity' > 0", "{}", true, "measured on a hosted runner, run 35656787367");
+  expr("'INFINITY' > 0", "{}", true, "measured on a hosted runner, run 35656787367: the literal is case insensitive");
+  expr("'NaN' > 0", "{}", false, "measured on a hosted runner, run 35656787367: NaN is not a parse branch");
+  expr("' 5 ' == 5", "{}", true, "measured on a hosted runner, run 35656787367: surrounding whitespace is trimmed");
+
+  /* relational */
+  expr("'a' > 'B'", "{}", false);
+  expr("'b' > 'A'", "{}", true);
+  expr("2 > 1", "{}", true);
+  expr("'abc' >= 'ABC'", "{}", true);
+  expr("true > false", "{}", true);
+  expr("fromJSON('[]') > 0", "{}", false, "containers have no relational branch");
+
+  /* truthiness under if: */
+  expr("!''", "{}", true);
+  expr("!' '", "{}", false, "a space is truthy");
+  expr("!'false'", "{}", false, "the string false is truthy");
+  expr("!0", "{}", true);
+  expr("!NaN", "{}", true);
+  expr("!null", "{}", true);
+  expr("!fromJSON('[]')", "{}", false, "an empty array is truthy");
+  expr("!fromJSON('{}')", "{}", false, "an empty object is truthy");
+
+  /* ordinal ignore case folding */
+  expr("'ı' == 'I'", "{}", false, "the dotless i is left alone by the invariant uppercase mapping");
+  expr("'straße' == 'STRASSE'", "{}", false, "sharp s is one unit and is never expanded");
+  expr("'é' == 'É'", "{}", true);
+
+  /* context access */
+  expr("github.ref", '{"github":{"ref":"refs/heads/main"}}', "refs/heads/main");
+  expr("GITHUB.REF", '{"github":{"ref":"refs/heads/main"}}', "refs/heads/main", "context lookup is case insensitive");
+  expr("github.missing == null", '{"github":{}}', true, "a missing property is Null, not an error");
+  expr("github.ref == null", "{}", true, "an empty context resolves the whole path to Null");
+  expr("inputs.prerelease", '{"inputs":{"prerelease":false}}', false);
+  expr("inputs['prerelease']", '{"inputs":{"prerelease":false}}', false);
+  expr("a[1]", '{"a":[10,20,30]}', 20);
+  expr("a[9] == null", '{"a":[10,20,30]}', true);
+  expr("join(a.*.n, '-')", '{"a":[{"n":"x"},{"n":"y"}]}', "x-y");
+  expr("__proto__ == null", '{"x":1}', true, "a name with no context entry is Null, nothing is read off a prototype");
+
+  /* short circuit returns the operand, not a boolean */
+  expr("'' || 'fallback'", "{}", "fallback");
+  expr("'set' || 'fallback'", "{}", "set");
+  expr("'set' && 'second'", "{}", "second");
+
+  /* functions */
+  expr("contains('Hello world', 'WORLD')", "{}", true);
+  expr("contains(fromJSON('[1,2,3]'), 2)", "{}", true);
+  expr("contains(fromJSON('[]'), 1)", "{}", false);
+  expr("startsWith('refs/heads/Main', 'REFS/')", "{}", true);
+  expr("endsWith('refs/heads/Main', '/main')", "{}", true);
+  expr("join(fromJSON('[\"a\",\"b\"]'), '-')", "{}", "a-b");
+  expr("join(fromJSON('[1,2]'))", "{}", "1,2");
+  expr("format('{0} and {{literal}}', 'x')", "{}", "x and {literal}");
+  expr("format('{0}{1}', 1, 2)", "{}", "12");
+
+  /* refusals, each one a named message rather than a value */
+  refuse("hashFiles('**/package-lock.json')", "hashFiles is refused");
+  refuse("success()", "success() is refused");
+  refuse("failure()", "failure() is refused");
+  refuse("always()", "always() is refused");
+  refuse("cancelled()", "cancelled() is refused");
+  refuse("toJSON(github)", "toJSON is refused");
+  refuse("nosuchfunc(1)", "Unknown function");
+  refuse("(1 == 1", "Expected ')'");
+  refuse("1 == ", "ended unexpectedly");
+  refuse("1 = 1", "single '='");
+  refuse("'unterminated", "Unterminated string");
+  refuse("fromJSON('  ')", "empty input");
+  refuse("fromJSON('{oops}')", "could not parse");
+  refuse("contains('a')", "takes 2 arguments");
+
+  /* ParseNumber directly */
+  num("", 0); num("   ", 0); num("+5", 5); num(" 1 ", 1); num("1e1", 10); num(".5", 0.5); num("5.", 5);
+  num("0x10", 16); num("0X10", NaN); num("0o17", 15); num("0O17", NaN); num("0b101", NaN);
+  num("0xFFFFFFFF", -1); num("0x7FFFFFFF", 2147483647); num("0x100000000", NaN);
+  num("0o37777777777", -1); num("0o40000000000", NaN);
+  num("Infinity", Infinity); num("-Infinity", -Infinity); num("abc", NaN); num("1,000", NaN);
+  num("infinity", Infinity); num("INFINITY", Infinity); num("NaN", NaN);
+
+  /* G15, the runner's number to string format */
+  fmt(0, "0"); fmt(-0, "-0"); fmt(1, "1"); fmt(0.1, "0.1"); fmt(1.5, "1.5"); fmt(100, "100");
+  fmt(0.0001, "0.0001"); fmt(0.00001, "1E-05"); fmt(1e-7, "1E-07"); fmt(1e21, "1E+21");
+  fmt(1e100, "1E+100"); fmt(1234567890123456, "1.23456789012346E+15");
+  fmt(1 / 3, "0.333333333333333"); fmt(2 / 3, "0.666666666666667"); fmt(12345.6789, "12345.6789");
+  fmt(NaN, "NaN"); fmt(Infinity, "Infinity"); fmt(-Infinity, "-Infinity");
+
+  return A;
+}
+
+function valueToPlain(val){
+  if (val.kind === "Null") { return null; }
+  if (val.kind === "Array" || val.kind === "Object") { return val.kind; }
+  return val.v;
+}
+
+function runOne(a){
+  if (a.kind === "expr") {
+    var r = run(a.e, a.ctx);
+    if (!r.ok) { return { pass: false, got: "refused: " + r.message, want: String(a.want) }; }
+    var got = valueToPlain(r.value);
+    var pass = (typeof got === "number" && typeof a.want === "number")
+      ? (got === a.want || (got !== got && a.want !== a.want))
+      : got === a.want;
+    return { pass: pass, got: JSON.stringify(got), want: JSON.stringify(a.want) };
+  }
+  if (a.kind === "refuse") {
+    var r2 = run(a.e, "{}");
+    if (r2.ok) { return { pass: false, got: "evaluated to " + valueToPlain(r2.value), want: "refusal containing " + a.needle }; }
+    return { pass: r2.message.indexOf(a.needle) >= 0, got: r2.message, want: "refusal containing " + a.needle };
+  }
+  if (a.kind === "num") {
+    var v = parseNumber(a.s).value;
+    var ok = (v !== v && a.want !== a.want) || v === a.want;
+    return { pass: ok, got: String(v), want: String(a.want) };
+  }
+  var s = g15(a.n);
+  return { pass: s === a.want, got: s, want: a.want };
+}
+
+function labelFor(a){
+  if (a.kind === "expr") { return a.e + (a.ctx !== "{}" ? "   against " + a.ctx : ""); }
+  if (a.kind === "refuse") { return a.e; }
+  if (a.kind === "num") { return "ParseNumber(" + JSON.stringify(a.s) + ")"; }
+  return "G15(" + (Object.is(a.n, -0) ? "-0" : String(a.n)) + ")";
+}
+
+
+var CORE = {
+  parseNumber: parseNumber, g15: g15, toUpperSpecial: toUpperSpecial,
+  convertToString: convertToString, isTruthy: isTruthy, isFalsy: isFalsy,
+  lex: lex, parse: parse, evaluate: evaluate, run: run, falsyReason: falsyReason,
+  jsCompare: jsCompare, stripWrapper: stripWrapper,
+  assertions: assertions, runOne: runOne, labelFor: labelFor, valueToPlain: valueToPlain
+};
+/* ============================= CORE-END ============================= */
+
+/* ============================== UI ================================== */
+var EXAMPLE_EXPR = "github.ref == 'refs/heads/main'";
+var EXAMPLE_CTX = '{\n  "github": { "ref": "refs/heads/Main" },\n  "inputs": { "prerelease": false }\n}';
+
+function el(tag, text, cls){
+  var n = document.createElement(tag);
+  if (text !== undefined && text !== null) { n.textContent = String(text); }
+  if (cls) { n.className = cls; }
+  return n;
+}
+function boolCell(b){
+  var td = el("td");
+  var s = el("span", b ? "true" : "false", "tok " + (b ? "tok-true" : "tok-false"));
+  td.appendChild(s);
+  return td;
+}
+function clear(node){ while (node.firstChild) { node.removeChild(node.firstChild); } }
+
+/* ---- the divergence tables. Both columns computed live. ---- */
+var DIVERGENCES = [
+  { expr: "'ABC' == 'abc'", js: function(){ return "ABC" == "abc"; },
+    why: "String and String is OrdinalIgnoreCase in the runner and case sensitive in JavaScript." },
+  { expr: "null == 0", js: function(){ return null == 0; },
+    why: "Null casts to 0 and the comparison is retried. JavaScript makes null loosely equal only to undefined." },
+  { expr: "null == ''", js: function(){ return null == ""; },
+    why: "Null casts to 0, then the empty string casts to 0, so both sides are 0." },
+  { expr: "fromJSON('[]') == 0", js: function(){ return JSON.parse("[]") == 0; },
+    why: "CoerceTypes has no Array branch, so the kinds still differ and the answer is false. JavaScript coerces the array to a primitive first." }
+];
+var SAME_AS_JS = [
+  { expr: "'' == 0", js: function(){ return "" == 0; } },
+  { expr: "0 == '0'", js: function(){ return 0 == "0"; } },
+  { expr: "'' == '0'", js: function(){ return "" == "0"; } },
+  { expr: "'true' == true", js: function(){ return "true" == true; } }
+];
+
+function evalBool(exprText){
+  var r = CORE.run(exprText, "{}");
+  if (!r.ok) { return { ok: false, message: r.message }; }
+  return { ok: true, value: r.value };
+}
+
+function renderDivergences(){
+  var tb = document.getElementById("divTable");
+  clear(tb);
+  for (var i = 0; i < DIVERGENCES.length; i++) {
+    var row = DIVERGENCES[i];
+    var r = evalBool(row.expr);
+    var tr = el("tr");
+    var th = el("th", row.expr, "mono"); th.setAttribute("scope", "row"); tr.appendChild(th);
+    if (r.ok) { tr.appendChild(boolCell(r.value.v)); }
+    else { tr.appendChild(el("td", "error: " + r.message)); }
+    tr.appendChild(boolCell(row.js()));
+    var w = el("td", row.why, "wrap"); w.style.whiteSpace = "normal"; tr.appendChild(w);
+    tb.appendChild(tr);
+  }
+  var tb2 = document.getElementById("sameTable");
+  clear(tb2);
+  for (var j = 0; j < SAME_AS_JS.length; j++) {
+    var row2 = SAME_AS_JS[j];
+    var r2 = evalBool(row2.expr);
+    var tr2 = el("tr");
+    var th2 = el("th", row2.expr, "mono"); th2.setAttribute("scope", "row"); tr2.appendChild(th2);
+    tr2.appendChild(r2.ok ? boolCell(r2.value.v) : el("td", "error"));
+    tr2.appendChild(boolCell(row2.js()));
+    tb2.appendChild(tr2);
+  }
+}
+
+/* ---- verdict ---- */
+function renderVerdict(exprText, ctxText){
+  var box = document.getElementById("verdict");
+  var tbody = document.getElementById("traceTable");
+  clear(box); clear(tbody);
+
+  var r = CORE.run(exprText, ctxText);
+  if (!r.ok) {
+    var cls = r.kind === "empty" ? "msg msg-warn" : "msg msg-err";
+    var head = r.kind === "empty" ? "Nothing to evaluate"
+      : r.kind === "ctx" ? "Context JSON refused"
+      : r.kind === "lex" ? "Expression could not be read"
+      : r.kind === "parse" ? "Expression could not be parsed"
+      : r.kind === "toolong" ? "Expression refused"
+      : "Evaluation refused";
+    var d = el("div", null, cls);
+    d.appendChild(el("strong", head));
+    d.appendChild(el("p", r.message));
+    box.appendChild(d);
+    return;
+  }
+
+  var dl = el("dl");
+  function pair(k, vnode){
+    dl.appendChild(el("dt", k));
+    var dd = el("dd");
+    dd.appendChild(vnode);
+    dl.appendChild(dd);
+  }
+  var v = r.value;
+  var valueText;
+  if (v.kind === "String") { valueText = "'" + v.v + "'"; }
+  else if (v.kind === "Number") { valueText = CORE.g15(v.v); }
+  else if (v.kind === "Null") { valueText = "null"; }
+  else if (v.kind === "Boolean") { valueText = v.v ? "true" : "false"; }
+  else if (v.kind === "Array") { valueText = "Array with " + v.v.length + " element(s)"; }
+  else { valueText = "Object"; }
+
+  var valSpan = el("span", valueText, "mono tok " +
+    (v.kind === "Boolean" ? (v.v ? "tok-true" : "tok-false") : ""));
+  pair("value", valSpan);
+  pair("ValueKind", el("span", v.kind, "mono tok tok-info"));
+
+  var truthy = CORE.isTruthy(v);
+  var tSpan = el("span", truthy ? "true, the step would run" : "false, the step would be skipped",
+    "tok " + (truthy ? "tok-true" : "tok-false"));
+  pair("truthy under an if: key", tSpan);
+  pair("why", el("span", CORE.falsyReason(v)));
+  pair("context", el("span", r.ctxNote));
+
+  var rootCmp = rootComparison(r.root);
+  if (rootCmp && v.operands) {
+    var jsv = CORE.jsCompare(v.operands.op, v.operands.l, v.operands.r);
+    var same = (jsv === v.v);
+    var js = el("span", String(jsv), "tok " + (jsv ? "tok-true" : "tok-false"));
+    pair("the same operator in raw JavaScript", js);
+    var note = el("span", same
+      ? "the two implementations agree on this comparison"
+      : "the two implementations DISAGREE on this comparison",
+      same ? "" : "tok tok-warn");
+    pair("side by side", note);
+  } else {
+    pair("the same operator in raw JavaScript",
+      el("span", "the root node is not a single comparison, so there is no one JavaScript operator to line it up against"));
+  }
+  box.appendChild(dl);
+
+  for (var i = 0; i < r.trace.length; i++) {
+    var row = r.trace[i];
+    var tr = el("tr");
+    var th = el("th", String(i + 1)); th.setAttribute("scope", "row"); tr.appendChild(th);
+    tr.appendChild(el("td", row.node, "mono"));
+    tr.appendChild(el("td", row.left, "mono"));
+    tr.appendChild(el("td", row.right, "mono"));
+    var c = el("td", row.cast); c.style.whiteSpace = "normal"; tr.appendChild(c);
+    var b = el("td", row.branch); b.style.whiteSpace = "normal"; tr.appendChild(b);
+    tr.appendChild(el("td", row.result, "mono"));
+    tbody.appendChild(tr);
+  }
+}
+function rootComparison(node){
+  return node && node.t === "cmp";
+}
+
+function runSelfTest(){
+  var out = document.getElementById("selftestOut");
+  clear(out);
+  var list = CORE.assertions();
+
+  var rows = [];
+  var passed = 0;
+  for (var i = 0; i < list.length; i++) {
+    var res = CORE.runOne(list[i]);
+    if (res.pass) { passed++; }
+    rows.push({ label: CORE.labelFor(list[i]), note: list[i].note || "", res: res, control: false });
+  }
+
+  /* POSITIVE CONTROL. This assertion is written to fail. If the suite ever
+     reports it as passing, or stops reporting it at all, the suite is broken. */
+  var control = CORE.run("1 == 2", "{}");
+  var controlPass = control.ok && control.value.v === true;
+  rows.push({
+    label: "positive control: 1 == 2 asserted to be true",
+    note: "written to fail on purpose",
+    res: { pass: controlPass, got: control.ok ? String(control.value.v) : "refused", want: "true" },
+    control: true
+  });
+
+  var total = list.length;
+  var head = el("div", null, (passed === total && !controlPass) ? "msg msg-ok" : "msg msg-err");
+  head.appendChild(el("strong",
+    (passed === total && !controlPass)
+      ? "Self test healthy: " + passed + " of " + total + " assertions passed, and the positive control failed as designed."
+      : "Self test PROBLEM: " + passed + " of " + total + " assertions passed" +
+        (controlPass ? ", and the positive control did not fail, which means the suite is not doing what it claims." : ".")
+  ));
+  out.appendChild(head);
+
+  var wrap = el("div", null, "scroll");
+  wrap.setAttribute("tabindex", "0");
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Self test results");
+  var table = el("table");
+  var thead = el("thead");
+  var htr = el("tr");
+  ["#", "assertion", "expected", "actual", "verdict", "note"].forEach(function(h){
+    var th = el("th", h); th.setAttribute("scope", "col"); htr.appendChild(th);
+  });
+  thead.appendChild(htr);
+  table.appendChild(thead);
+  var tb = el("tbody");
+  for (var j = 0; j < rows.length; j++) {
+    var row = rows[j];
+    var tr = el("tr");
+    if (row.control) { tr.className = "flag"; }
+    var th2 = el("th", row.control ? "PC" : String(j + 1)); th2.setAttribute("scope", "row"); tr.appendChild(th2);
+    tr.appendChild(el("td", row.label, "mono"));
+    tr.appendChild(el("td", row.res.want, "mono"));
+    tr.appendChild(el("td", row.res.got, "mono"));
+    var vt = el("td");
+    var verdictText = row.control
+      ? (row.res.pass ? "PASSED, which is a fault" : "failed as designed")
+      : (row.res.pass ? "pass" : "FAIL");
+    var okLooking = row.control ? !row.res.pass : row.res.pass;
+    vt.appendChild(el("span", verdictText, "tok " + (okLooking ? "tok-true" : "tok-false")));
+    tr.appendChild(vt);
+    var nt = el("td", row.note); nt.style.whiteSpace = "normal"; tr.appendChild(nt);
+    tb.appendChild(tr);
+  }
+  table.appendChild(tb);
+  wrap.appendChild(table);
+  out.appendChild(wrap);
+}
+
+/* always on strip: the one regression that must never come back silently */
+function renderStrip(){
+  var strip = document.getElementById("strip");
+  clear(strip);
+  var checks = [
+    { e: "'ABC' == 'abc'", want: true, label: "String equality is OrdinalIgnoreCase" },
+    { e: "github.ref == 'refs/heads/main'", ctx: '{"github":{"ref":"refs/heads/Main"}}', want: true,
+      label: "the worked example" },
+    { e: "null == 0", want: true, label: "Null casts to 0" }
+  ];
+  var allOk = true;
+  var wrap = el("div", null, "scroll");
+  wrap.setAttribute("tabindex", "0");
+  wrap.setAttribute("role", "group");
+  wrap.setAttribute("aria-label", "Always on checks");
+  var table = el("table");
+  var thead = el("thead");
+  var htr = el("tr");
+  ["check", "expression", "expected", "actual"].forEach(function(h){
+    var th = el("th", h); th.setAttribute("scope", "col"); htr.appendChild(th);
+  });
+  thead.appendChild(htr); table.appendChild(thead);
+  var tb = el("tbody");
+  for (var i = 0; i < checks.length; i++) {
+    var c = checks[i];
+    var r = CORE.run(c.e, c.ctx || "{}");
+    var got = r.ok ? CORE.valueToPlain(r.value) : "refused";
+    if (got !== c.want) { allOk = false; }
+    var tr = el("tr");
+    var th = el("th", c.label); th.setAttribute("scope", "row"); th.style.whiteSpace = "normal"; tr.appendChild(th);
+    tr.appendChild(el("td", c.e, "mono"));
+    tr.appendChild(el("td", String(c.want), "mono"));
+    var td = el("td");
+    td.appendChild(el("span", String(got), "tok " + (got === c.want ? "tok-true" : "tok-false")));
+    tr.appendChild(td);
+    tb.appendChild(tr);
+  }
+  table.appendChild(tb); wrap.appendChild(table);
+  var banner = el("div", null, allOk ? "msg msg-ok" : "msg msg-err");
+  banner.appendChild(el("strong", allOk
+    ? "Always on checks pass."
+    : "Always on checks FAILED. Do not trust anything else on this page."));
+  strip.appendChild(banner);
+  strip.appendChild(wrap);
+}
+
+/* ---- wiring ---- */
+var exprInput = document.getElementById("exprInput");
+var ctxInput = document.getElementById("ctxInput");
+var timer = null;
+
+function schedule(){
+  if (timer) { clearTimeout(timer); }
+  timer = setTimeout(function(){
+    timer = null;
+    renderVerdict(exprInput.value, ctxInput.value);
+  }, 300);
+}
+
+exprInput.value = EXAMPLE_EXPR;
+ctxInput.value = EXAMPLE_CTX;
+exprInput.addEventListener("input", schedule);
+ctxInput.addEventListener("input", schedule);
+document.getElementById("evalBtn").addEventListener("click", function(){
+  renderVerdict(exprInput.value, ctxInput.value);
+});
+document.getElementById("exampleBtn").addEventListener("click", function(){
+  exprInput.value = EXAMPLE_EXPR;
+  ctxInput.value = EXAMPLE_CTX;
+  renderVerdict(exprInput.value, ctxInput.value);
+});
+document.getElementById("selftestBtn").addEventListener("click", runSelfTest);
+
+renderDivergences();
+renderStrip();
+renderVerdict(exprInput.value, ctxInput.value);
+
+})();
+</script>
+</body>
+</html>
