@@ -90,7 +90,7 @@ GitHub is a trademark of its owner. This project is independent and unaffiliated
 
 ## License
 
-MIT. Copyright (c) 2026 0xelitesystem.
+MIT. Copyright (c) 2026 RBL Industries LLC.
 
 ## Related
 
