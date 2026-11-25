@@ -95,5 +95,5 @@ MIT. Copyright (c) 2026 RBL Industries LLC.
 ## Related
 
 - [yaml-type-coercion-auditor](https://github.com/0xelitesystem/yaml-type-coercion-auditor) that tool decides what the YAML parser turned your token into, this one decides what the expression evaluator does with the value the parser produced.
-- [cron-expression-explainer](https://github.com/0xelitesystem/cron-expression-explainer) for the other half of a workflow trigger, the schedule.
+- [cron-plain-english-reader](https://github.com/0xelitesystem/cron-plain-english-reader) for the other half of a workflow trigger, the schedule.
 - [electron-release-matrix-auditor](https://github.com/0xelitesystem/electron-release-matrix-auditor) reads a whole workflow file, where this one evaluates a single expression.
